@@ -4,20 +4,26 @@
 -- self-contained and must ship on its own — do not bundle them into one PR.
 
 -- ============================================================
--- Phase 1: Additive — ships immediately
+-- Phase 1: Backfill existing NULLs
 -- When: Ship in this PR.
--- Add the new shape alongside the old. No reads or writes use it yet.
+-- Give every existing NULL in Envelope.externalId a valid value before the constraint is added. On a large table, run this in batches.
 -- ============================================================
-BEGIN;
--- Sieve could not auto-generate phase 1 SQL for this specific diff.
--- Recommended pattern: ADD column/table without removing existing structure.
-COMMIT;
+-- Replace <value> with the correct backfill for existing rows.
+UPDATE "Envelope" SET "externalId" = <value> WHERE "externalId" IS NULL;
 
 -- ============================================================
--- Phase 2: Cleanup — after soak
--- When: Ship in a SEPARATE PR, after a soak period (>= 7 days).
--- Drop the deprecated structure once the new shape has been the source of truth for ≥ 7 days.
+-- Phase 2: Enforce NOT NULL without a long lock
+-- When: Ship only after phase 1 has deployed and the backfill has run.
+-- A plain SET NOT NULL scans the whole table under ACCESS EXCLUSIVE, blocking writes. Adding a NOT VALID CHECK first, then validating, keeps writes live.
 -- ============================================================
-BEGIN;
--- Drop the deprecated structure here.
-COMMIT;
+-- 1. Add the check without scanning existing rows (no long lock).
+ALTER TABLE "Envelope"
+  ADD CONSTRAINT "Envelope_externalId_not_null" CHECK ("externalId" IS NOT NULL) NOT VALID;
+
+-- 2. Validate under a lighter lock — reads and writes continue.
+ALTER TABLE "Envelope" VALIDATE CONSTRAINT "Envelope_externalId_not_null";
+
+-- 3. Postgres 12+: promote to a real NOT NULL using the validated check
+--    (cheap, no second scan), then drop the now-redundant check.
+ALTER TABLE "Envelope" ALTER COLUMN "externalId" SET NOT NULL;
+ALTER TABLE "Envelope" DROP CONSTRAINT "Envelope_externalId_not_null";
