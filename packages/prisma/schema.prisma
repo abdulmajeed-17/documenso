@@ -113,7 +113,7 @@ model UserSecurityAuditLog {
   createdAt DateTime                 @default(now())
   type      UserSecurityAuditLogType
   userAgent String?
-  ipAddress String?
+  ipAddress String
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
