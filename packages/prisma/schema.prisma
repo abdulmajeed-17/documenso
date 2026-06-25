@@ -39,7 +39,7 @@ enum Role {
 model User {
   id               Int              @id @default(autoincrement())
   name             String?
-  email            String           @unique
+  email            String
   emailVerified    DateTime?
   password         String? // Todo: (RR7) Remove after RR7 migration.
   source           String?
@@ -74,6 +74,7 @@ model User {
   passkeys           Passkey[]
   avatarImage        AvatarImage?           @relation(fields: [avatarImageId], references: [id], onDelete: SetNull)
 
+  @@unique([email, identityProvider])
   @@index([email])
 }
 
@@ -136,7 +137,7 @@ model Passkey {
   lastUsedAt           DateTime?
   credentialId         Bytes /// @zod.custom.use(z.instanceof(Uint8Array))
   credentialPublicKey  Bytes /// @zod.custom.use(z.instanceof(Uint8Array))
-  counter              BigInt
+  counter              Int
   credentialDeviceType String
   credentialBackedUp   Boolean
   transports           String[]
@@ -226,8 +227,8 @@ model ApiToken {
   algorithm ApiTokenAlgorithm @default(SHA512)
   expires   DateTime?
   createdAt DateTime          @default(now())
-  userId    Int?
-  user      User?             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    Int
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   teamId    Int
   team      Team              @relation(fields: [teamId], references: [id], onDelete: Cascade)
 }
@@ -243,7 +244,7 @@ model Subscription {
   status            SubscriptionStatus @default(INACTIVE)
   planId            String             @unique
   priceId           String
-  periodEnd         DateTime?
+  periodEnd         DateTime
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
   cancelAtPeriodEnd Boolean            @default(false)
@@ -371,23 +372,21 @@ model Session {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([sessionToken])
 }
 
 enum DocumentStatus {
-  DRAFT
   PENDING
-  COMPLETED
+  FINALIZED
   REJECTED
   CANCELLED
 }
 
 enum DocumentSource {
   DOCUMENT
-  TEMPLATE
   TEMPLATE_DIRECT_LINK
 }
 
@@ -427,7 +426,6 @@ model Folder {
 
 enum EnvelopeType {
   DOCUMENT
-  TEMPLATE
 }
 
 /// @zod.import(["import { ZDocumentAuthOptionsSchema } from '@documenso/lib/types/document-auth';", "import { ZDocumentFormValuesSchema } from '@documenso/lib/types/document-form-values';", "import { ZSignatureLevelSchema } from '@documenso/lib/types/signature-level';"])
@@ -444,7 +442,7 @@ model Envelope {
   deletedAt   DateTime?
 
   title   String
-  status  DocumentStatus @default(DRAFT)
+  status  DocumentStatus @default(PENDING)
   source  DocumentSource
   qrToken String? /// @zod.string.describe("The token for viewing the document using the QR code on the certificate.")
 
@@ -478,8 +476,8 @@ model Envelope {
   teamId Int
   team   Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
 
-  folder   Folder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
-  folderId String?
+  folder   Folder @relation(fields: [folderId], references: [id], onDelete: Restrict)
+  folderId String
 
   documentMetaId String       @unique
   documentMeta   DocumentMeta @relation(fields: [documentMetaId], references: [id])
@@ -515,7 +513,7 @@ model EnvelopeItem {
 
 model DocumentAuditLog {
   id         String   @id @default(cuid())
-  envelopeId String?
+  envelopeId String
   createdAt  DateTime @default(now())
   type       String
   data       Json
@@ -527,7 +525,7 @@ model DocumentAuditLog {
   userAgent String?
   ipAddress String?
 
-  envelope Envelope? @relation(fields: [envelopeId], references: [id], onDelete: SetNull)
+  envelope Envelope @relation(fields: [envelopeId], references: [id], onDelete: Restrict)
 
   @@index([envelopeId])
 }
@@ -559,11 +557,11 @@ enum DocumentDistributionMethod {
 /// @zod.import(["import { ZDocumentEmailSettingsSchema } from '@documenso/lib/types/document-email';", "import { ZEnvelopeExpirationPeriod as ZEnvelopeExpirationPeriodSchema } from '@documenso/lib/constants/envelope-expiration';", "import { ZEnvelopeReminderSettings as ZEnvelopeReminderSettingsSchema } from '@documenso/lib/constants/envelope-reminder';"])
 model DocumentMeta {
   id                     String               @id @default(cuid())
-  subject                String?
-  message                String?
+  subject                String
+  message                String
   timezone               String?              @default("Etc/UTC") @db.Text
   dateFormat             String?              @default("yyyy-MM-dd hh:mm a") @db.Text
-  redirectUrl            String?
+  redirectUrl            String
   signingOrder           DocumentSigningOrder @default(PARALLEL)
   allowDictateNextSigner Boolean              @default(false)
 
@@ -614,14 +612,12 @@ enum SendStatus {
 }
 
 enum SigningStatus {
-  NOT_SIGNED
   SIGNED
   REJECTED
 }
 
 enum RecipientRole {
   CC
-  SIGNER
   VIEWER
   APPROVER
   ASSISTANT
@@ -633,7 +629,7 @@ model Recipient {
   envelopeId           String
   email                String        @db.VarChar(255)
   name                 String        @default("") @db.VarChar(255)
-  token                String
+  token                String        @unique
   documentDeletedAt    DateTime?
   expired              DateTime? // deprecated Not in use. To be removed in a future migration.
   expiresAt            DateTime?
@@ -646,9 +642,9 @@ model Recipient {
   authOptions          Json? /// [RecipientAuthOptions] @zod.custom.use(ZRecipientAuthOptionsSchema)
   signingOrder         Int? /// @zod.number.describe("The order in which the recipient should sign the document. Only works if the document is set to sequential signing.")
   rejectionReason      String?
-  role                 RecipientRole @default(SIGNER)
+  role                 RecipientRole @default(APPROVER)
   readStatus           ReadStatus    @default(NOT_OPENED)
-  signingStatus        SigningStatus @default(NOT_SIGNED)
+  signingStatus        SigningStatus @default(SIGNED)
   sendStatus           SendStatus    @default(NOT_SENT)
   envelope             Envelope      @relation(fields: [envelopeId], references: [id], onDelete: Cascade)
   fields               Field[]
@@ -672,7 +668,6 @@ model Recipient {
 
 enum FieldType {
   SIGNATURE
-  FREE_SIGNATURE
   INITIALS
   NAME
   EMAIL
@@ -701,9 +696,9 @@ model Field {
   inserted       Boolean
   envelopeItem   EnvelopeItem @relation(fields: [envelopeItemId], references: [id], onDelete: Cascade)
   envelope       Envelope     @relation(fields: [envelopeId], references: [id], onDelete: Cascade)
-  recipient      Recipient    @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  recipient      Recipient    @relation(fields: [recipientId], references: [id], onDelete: Restrict)
   signature      Signature?
-  fieldMeta      Json? /// [FieldMeta] @zod.custom.use(ZFieldMetaNotOptionalSchema)
+  fieldMeta      Json /// [FieldMeta] @zod.custom.use(ZFieldMetaNotOptionalSchema)
 
   @@index([envelopeId])
   @@index([envelopeItemId])
@@ -715,8 +710,8 @@ model Signature {
   created                DateTime @default(now())
   recipientId            Int
   fieldId                Int      @unique
-  signatureImageAsBase64 String?
-  typedSignature         String?
+  signatureImageAsBase64 String
+  typedSignature         String
 
   recipient Recipient @relation(fields: [recipientId], references: [id], onDelete: Cascade)
   field     Field     @relation(fields: [fieldId], references: [id], onDelete: Cascade)
@@ -818,7 +813,7 @@ model Organisation {
   url           String           @unique
   avatarImageId String?
 
-  customerId   String?       @unique
+  customerId   String        @unique
   subscription Subscription?
 
   organisationClaimId String            @unique
@@ -1123,7 +1118,7 @@ enum BackgroundJobStatus {
 model BackgroundJob {
   id         String              @id @default(cuid())
   status     BackgroundJobStatus @default(PENDING)
-  payload    Json?
+  payload    Json
   retried    Int                 @default(0)
   maxRetries Int                 @default(3)
 
