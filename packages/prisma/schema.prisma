@@ -81,7 +81,8 @@ model TeamProfile {
   id      String  @id @default(cuid())
   enabled Boolean @default(false)
   teamId  Int     @unique
-  bio     String?
+  bio         String?
+  websiteUrl  String?
 
   team Team? @relation(fields: [teamId], references: [id], onDelete: Cascade)
 }
@@ -442,6 +443,7 @@ model Envelope {
   updatedAt   DateTime  @updatedAt
   completedAt DateTime?
   deletedAt   DateTime?
+  archivedAt  DateTime?
 
   title   String
   status  DocumentStatus @default(DRAFT)
@@ -488,10 +490,12 @@ model Envelope {
 
   @@index([type])
   @@index([status])
+  @@index([status, teamId])
   @@index([userId])
   @@index([teamId])
   @@index([folderId])
   @@index([createdAt])
+  @@index([updatedAt])
 }
 
 model EnvelopeItem {
@@ -1124,6 +1128,7 @@ model BackgroundJob {
   id         String              @id @default(cuid())
   status     BackgroundJobStatus @default(PENDING)
   payload    Json?
+  notes      String?
   retried    Int                 @default(0)
   maxRetries Int                 @default(3)
 
@@ -1161,6 +1166,8 @@ model BackgroundJobTask {
 
   jobId         String
   backgroundJob BackgroundJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId])
 }
 
 model AvatarImage {
