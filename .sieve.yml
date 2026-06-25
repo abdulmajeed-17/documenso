@@ -1,0 +1,5 @@
+# Sieve policy for this repo
+# Block merge on high-risk-or-worse migrations, and let Sieve open the
+# corrected, phased migration as a follow-up PR.
+blockOn: high
+autofix: true
